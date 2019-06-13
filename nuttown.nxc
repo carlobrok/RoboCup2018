@@ -1,0 +1,956 @@
+#define SENWERT1 100
+#define SENWERT2 130
+#define SENWERT3 150
+#define SENWERT4 100
+
+#define powerSchnell 100
+#define powerNormal 70
+#define powerLangsam 50
+#define powerRueck 50
+#define powerDrehen 75
+
+#define grun2 greenProz2 > 38 && blueProz2 <= 30 && redProz2 <= 31
+#define grun3 greenProz3 > 38 && blueProz3 <= 30 && redProz3 <= 33
+
+#define S1sch Sensor1 > SENWERT1
+#define S1wei Sensor1 < SENWERT1
+
+#define S2sch RGB2 < SENWERT2
+#define S2wei RGB2 > SENWERT2
+
+#define S3sch RGB3 < SENWERT3
+#define S3wei RGB3 > SENWERT3
+
+#define S4sch Sensor4 > SENWERT4
+#define S4wei Sensor4 < SENWERT4
+
+#define neigungRampeH -10
+#define neigungRampeR 10
+
+int neigungX;
+int neigungY;
+int neigungZ;
+
+int touchl;
+int touchr;
+int touchm;
+int touchh;
+
+bool rampeHoch = false;
+bool rampeOben = false;
+bool rampeRunter = false;
+bool flascheLinks = true;
+
+bool endTest = false;
+bool endZone = false;
+bool endFahren = false;
+bool endEckeFinden = false;
+bool endEckeGefunden = false;
+bool endFertig = false;
+int endLoop = 0;
+int weissTime = 0;
+
+// EXTRA VARIABLEN
+int powerVor = powerNormal;
+int extra = 2;
+bool init = true;
+
+int s1off;
+int s2off;
+int s3off;
+int s4off;
+
+// SENSOR 1
+int Sensor1;
+int sch1;
+int wei1 = 55;
+int sen1;
+
+// SENSOR 2
+int sen2 = SENWERT2;
+
+unsigned int rawRed2;
+unsigned int rawBlue2;
+unsigned int rawGreen2;
+int RGB2;
+int redProz2;
+int blueProz2;
+int greenProz2;
+
+
+// SENSOR 3
+
+int sen3 = SENWERT3;
+
+unsigned int rawRed3;
+unsigned int rawBlue3;
+unsigned int rawGreen3;
+int RGB3;
+int redProz3;
+int blueProz3;
+int greenProz3;
+
+// SENSOR 4
+int sch4;
+int Sensor4;
+int wei4 = 56;
+int sen4;
+
+// I2C-Kommunikation
+byte adresse = 0x18;                                // Arduino Adresse
+byte anzahl_bytes = 9;                             // Anzahl der von Arduinoboard erwarteten Daten/Zahlen
+byte gesendet[];                                    // Array für gesendete Daten
+byte empfangen[9];                                   // Array für empfangene Daten
+
+// ===== VOIDS ======
+  // VOR
+
+task msgReset()
+{
+  Wait(3000);
+  ClearLine(LCD_LINE8);
+  TextOut(1,LCD_LINE8,"MSG:");
+}
+
+void msg(string text) {
+  TextOut(1,LCD_LINE8,"MSG: " + text);
+  start msgReset;
+}
+
+
+void vor_nt()                                 // Vor NoTime
+{
+  OnRevSync(OUT_AC, powerVor, 0);
+}
+
+void vor_t(int Zeit_vor)                      // Vor für Zeit
+{
+  OnRevSync(OUT_AC, powerVor, 0);
+  Wait(Zeit_vor);
+}
+
+  // RUECK
+
+void rueck_nt()                               // Rueck NoTime
+{
+  OnFwdSync(OUT_AC, powerRueck, 0);
+}
+
+void rueck_t(int Zeit_rueck)                  // Rueck für Zeit
+{
+  OnFwdSync(OUT_AC, powerRueck, 0);
+  Wait(Zeit_rueck);
+}
+
+  // RECHTS
+
+void rechts_nt()                              // Rechts NoTime
+{
+  OnFwd(OUT_C, powerDrehen);
+  OnRev(OUT_A, powerDrehen);
+}
+
+void rechts_t(int Zeit_rechts)                // Rechts für Zeit
+{
+  OnFwd(OUT_C, powerDrehen);
+  OnRev(OUT_A, powerDrehen);
+  Wait(Zeit_rechts);
+}
+
+  // LINKS
+
+void links_nt()
+{
+  OnFwd(OUT_A, powerDrehen);
+  OnRev(OUT_C, powerDrehen);
+}
+
+void links_t(int Zeit_links)
+{
+  OnFwd(OUT_A, powerDrehen);
+  OnRev(OUT_C, powerDrehen);
+  Wait(Zeit_links);
+}
+
+
+//  ENDZONE  ------------------------
+void ausrichtenWand()
+{
+  vor_nt();
+  bool fertig = false;
+  while(!fertig)
+  {
+    int turns;
+    until(touchl == 1 && touchr == 1 || turns > 10) {
+      vor_nt();
+      if(touchr == 1){
+        Off(OUT_AC);
+        OnFwd(OUT_C, 50);
+        Wait(100);
+        turns++;
+      } else if(touchl == 1){
+        Off(OUT_AC);
+        OnFwd(OUT_A, 50);
+        Wait(100);
+        turns++;
+      }
+      if(turns > 5) {
+        vor_t(200);
+        turns -= turns;
+      }
+    }
+    fertig = true;
+  }
+  Off(OUT_AC);
+  Wait(200);
+  OnRev(OUT_AC, 50);
+  Wait(800);
+  Off(OUT_AC);
+}
+
+void endZoneErkennen()
+{
+  if(weissTime > 500) {     // WENN 5 SEKUNDEN WEISS
+    endTest = true;
+    int a;
+    int b;
+    Off(OUT_AC);
+    for(a=0; a < 40 && S1wei && S2wei && S3wei && S4wei; a++){
+      links_t(10);
+    }
+    if(a == 40) {
+      for(b = 0; b <80 && S1wei && S2wei && S3wei && S4wei; b++){
+        rechts_t(10);
+      }
+    }
+    if(b == 80) {
+      links_t(400);
+      weissTime = 0;
+      endZone = true;
+    }
+    endTest = false;
+  }
+}
+
+void endZoneAbfahren() {
+  while (touchh != 1 && endZone == true) {
+    OnFwdSync(OUT_AC, 55, 0);
+  }
+  msg("WAND H");
+}
+
+void endDrehen() {
+  if (endFahren) {
+    if(endLoop % 2 == 0) {
+      Off(OUT_AC);
+      RotateMotor(OUT_AC, 80, -360);
+      RotateMotor(OUT_A, 80, 930);
+      for (int i = 0; i < 20; i++) {
+        OnRev(OUT_AC, 90);
+        Wait(45);
+        if(S1sch || S4sch) {
+          endEckeGefunden = true;
+          endFahren = false;
+          i = 5000;
+        }
+        if(touchl == 1 || touchr == 1) {
+          if(!endEckeGefunden) endEckeFinden = true;
+          i = 5000;
+          endFahren = false;
+        }
+      }
+      if(!endEckeGefunden && !endEckeFinden) {
+        RotateMotorEx(OUT_AC, 80, 400, -100, true, false);
+        if(S1sch || S4sch) {
+          endEckeGefunden = true;
+          endFahren = false;
+        } else {
+          ausrichtenWand();
+        }
+      } else if(endEckeGefunden) {
+        RotateMotorEx(OUT_AC, 80, 400, -100, true, false);
+        ausrichtenWand();
+      }
+      endLoop++;
+    } else {
+      Off(OUT_AC);
+      RotateMotor(OUT_AC, 80, -360);
+      RotateMotor(OUT_C, 80, 930);
+      for (int i = 0; i < 20; i++) {
+        OnRev(OUT_AC, 90);
+        Wait(45);
+        if(S1sch || S4sch) {
+          endEckeGefunden = true;
+          endFahren = false;
+          i = 5000;
+        }
+        if(touchl == 1 || touchr == 1) {
+          if(!endEckeGefunden) endEckeFinden = true;
+          endFahren = false;
+          i = 5000;
+        }
+      }
+      if(!endEckeGefunden && !endEckeFinden) {
+        RotateMotorEx(OUT_AC, 80, 400, 100, true, false);
+        if(S1sch || S4sch) {
+          if(!endEckeFinden) endEckeGefunden = true;
+          endFahren = false;
+        } else {
+          ausrichtenWand();
+        }
+      } else if(endEckeGefunden) {
+        RotateMotorEx(OUT_AC, 80, 400, 100, true, false);
+        ausrichtenWand();
+      }
+      endLoop++;
+    }
+  }
+}
+
+// KUGEL KÄFIG
+
+void kaefigHoch()
+{
+  OnFwd(OUT_B,110);
+  Wait(1000);
+  Off(OUT_B);
+}
+
+void kaefigRunter()
+{
+  OnRev(OUT_B,100);
+  Wait(1000);
+  Off(OUT_B);
+}
+
+// DISPLAY OUTPUT
+
+void display(bool startup_anzeige, bool werte_anzeigen) {
+  if(startup_anzeige == true)
+  {
+    ClearScreen();                                  // Display beim Starten
+    TextOut(0,LCD_LINE3,"     Starten     ");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      .");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      ..");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      ...");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      ....");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      .....");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"       ....");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"        ...");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"         ..");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"          .");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"           ");
+    Wait(300);
+    ClearScreen();
+    kaefigHoch();
+  }
+  if(werte_anzeigen == true){
+    TextOut(1, LCD_LINE1, "S1:" + NumToStr(Sensor1)+"   ");
+    if(S1sch) {
+      TextOut(40, LCD_LINE1, "S");
+    } else {
+      TextOut(40, LCD_LINE1, "W");
+    }
+
+    TextOut(50, LCD_LINE1, "S4:" + NumToStr(Sensor4)+"   ");
+    if(S4sch) {
+      TextOut(90, LCD_LINE1, "S");
+    } else {
+      TextOut(90, LCD_LINE1, "W");
+    }
+
+    TextOut(1, LCD_LINE2, "S2: " + NumToStr(RGB2)+"   ");
+    TextOut(1, LCD_LINE3, "S3: " + NumToStr(RGB3)+"   ");
+    TextOut(1,LCD_LINE4, "L:"  + NumToStr(touchl));
+    TextOut(25,LCD_LINE4, "M:"  + NumToStr(touchm));
+    TextOut(50,LCD_LINE4, "R:"  + NumToStr(touchr));
+    TextOut(75,LCD_LINE4, "H:"  + NumToStr(touchh));
+
+    TextOut(1, LCD_LINE5, "X: " + NumToStr(neigungX)+" "+"Y: "+NumToStr(neigungY));
+    TextOut(50, LCD_LINE5, "Tem: " + NumToStr(powerVor) + "%");
+    TextOut(1, LCD_LINE6, "WTimer:" + NumToStr(weissTime));
+
+  }
+}
+
+// ===== TASKS =====
+
+
+int Lese_Arduino()
+{
+  ArrayBuild(gesendet, adresse, 0x00);                               // Sende den Wert 0 zum Arduinoboard
+  I2CBytes(S1, gesendet, anzahl_bytes, empfangen);                        // I2C-Kommunikation
+  neigungX = empfangen[0] - 128;
+  neigungY = empfangen[1] - 128;
+  neigungZ = empfangen[2] - 128;
+  Sensor1 = empfangen[3];
+  Sensor4 = empfangen[4];
+  touchl = empfangen[5];                           // TOUCH LINKS
+  touchr = empfangen[6];                           // TOUCH RECHTS
+  touchm = empfangen[7];                           // TOUCH MITTE
+  touchh = empfangen[8];                           // TOUCH HINTEN
+  return(empfangen[0]);
+}
+
+task werte()
+{
+  int daten = 0;
+  init = true;
+  daten = Lese_Arduino();
+  rawRed2 = ColorSensorRaw(S2, INPUT_RED);
+  rawBlue2 = ColorSensorRaw(S2, INPUT_BLUE);
+  rawGreen2 = ColorSensorRaw(S2, INPUT_GREEN);
+  RGB2 = rawRed2 + rawBlue2 + rawGreen2;
+  redProz2 = (rawRed2 * 100) / RGB2;
+  blueProz2 = (rawBlue2 * 100) / RGB2;
+  greenProz2 = (rawGreen2 * 100) / RGB2;
+
+  rawRed3 = ColorSensorRaw(S3, INPUT_RED);
+  rawBlue3 = ColorSensorRaw(S3, INPUT_BLUE);
+  rawGreen3 = ColorSensorRaw(S3, INPUT_GREEN);
+  RGB3 = rawRed3 + rawBlue3 + rawGreen3;
+  redProz3 = (rawRed3 * 100) / RGB3;
+  blueProz3 = (rawBlue3 * 100) / RGB3;
+  greenProz3 = (rawGreen3 * 100) / RGB3;
+  init = false;
+  while (true) {
+    // RGB RAW WERTE   werden aktualisiert
+
+    rawRed2 = ColorSensorRaw(S2, INPUT_RED);
+    rawBlue2 = ColorSensorRaw(S2, INPUT_BLUE);
+    rawGreen2 = ColorSensorRaw(S2, INPUT_GREEN);
+    RGB2 = rawRed2 + rawBlue2 + rawGreen2;
+    redProz2 = (rawRed2 * 100) / RGB2;
+    blueProz2 = (rawBlue2 * 100) / RGB2;
+    greenProz2 = (rawGreen2 * 100) / RGB2;
+
+    rawRed3 = ColorSensorRaw(S3, INPUT_RED);
+    rawBlue3 = ColorSensorRaw(S3, INPUT_BLUE);
+    rawGreen3 = ColorSensorRaw(S3, INPUT_GREEN);
+    RGB3 = rawRed3 + rawBlue3 + rawGreen3;
+    redProz3 = (rawRed3 * 100) / RGB3;
+    blueProz3 = (rawBlue3 * 100) / RGB3;
+    greenProz3 = (rawGreen3 * 100) / RGB3;
+    // Arduino Daten lesen
+    daten = Lese_Arduino();
+    display(false, true);         // DISPLAY UPDATE. Nur werte
+  }
+}
+
+
+task eZone() {
+  while (!endZone) {
+    if(!endTest && S1wei && S2wei && S3wei && S4wei) {
+      weissTime += 10;
+      Wait(50);
+    } else if(S1sch || S2sch || S3sch || S4sch) {
+      weissTime = 0;
+    }
+  }
+}
+
+bool grtest() {
+  // GRÜN
+  if(grun2 && !rampeHoch)
+  {
+    msg("GRUEN L");
+    vor_t(400);
+    links_t(850);
+    return true;
+  }
+
+  if(grun3 && !rampeHoch)
+  {
+    msg("GRUEN R");
+    vor_t(400);
+    rechts_t(850);
+    return true;
+  }
+  return false;
+}
+
+// MAIN TASK
+
+task main()
+{
+// SENSOR INIT
+
+  // SENSOR 1
+  sch1 = SENWERT1 + extra;
+  sen1 = sch1;
+  // SENSOR 4
+  sch4 = SENWERT4 + extra;
+  sen4 = sch4;
+  msg("SEN INIT");
+  // SENSOREN DEFINIEREN
+  SetSensorLowspeed(IN_1);                                             // Die I2C-Kommunikation wird für Port 1 initialisiert.
+  SetSensorColorFull(S2);
+  SetSensorColorFull(S3);
+
+// end INIT
+  start werte;  // werte Messprogramm starten
+
+  while(init);  // WARTEN AUF ARDUINO
+
+  ClearScreen();
+  kaefigHoch();
+  start eZone;  // Endzonen Timer starten
+  while(true)
+  {
+    vor_nt();
+
+  // LINIE FAHREN
+
+    // INNEN
+
+    if(RGB3 > 350) {
+      for (int i = 0; i < 300; i++) {
+        vor_t(1);
+        if(RGB2 > 350) {
+          vor_t(500);
+          msg("BUMPER / R");
+          i = 500;
+        }
+      }
+      //if(!rampeHoch && !rampeRunter) rueck_t(500);
+    }
+
+    if(RGB2 > 350) {
+      for (int i = 0; i < 300; i++) {
+        vor_t(1);
+        if(RGB3 > 350) {
+          vor_t(500);
+          msg("BUMPER / R");
+          i = 500;
+        }
+      }
+      //if(!rampeHoch && !rampeRunter) rueck_t(500);
+    }
+
+    if(S2sch)
+    {
+      msg("S2sch");
+      /*if (rampeOben) {
+        for (int i = 0; i < 300; i++) {
+          OnRev(OUT_AC, 40);
+          Wait(1);
+          if (S2sch && S1sch && S3sch) {
+            for (int i = 0; i < 1500 && neigungX < 9; i++) {
+              OnRev(OUT_AC, 40);
+              Wait(1);
+              if (grtest()) i = 5000;
+            }
+          }
+        }
+      }*/
+      if (rampeHoch || rampeOben) {
+        if(S3sch) {
+          vor_t(200);
+          msg("S3SCH");
+        } else if(S2sch){
+          Off(OUT_AC);
+          for (int i = 0; i < 180 && S2sch; i++) {
+            OnRev(OUT_C, powerNormal);
+            Wait(1);
+          }
+        }
+      } else if(rampeRunter){
+        for (int i = 0; i < 150 && S2sch; i++) {
+          links_t(1);
+        }
+      } else if(!rampeHoch) {
+        for (int i = 0; i < 80; i++) {
+          links_t(1);
+          if(S1sch &&  S4wei && i < 40) {
+            links_t(290);
+            i = 300;
+          }
+        }
+      }
+    }
+
+    if(S3sch)
+    {
+      msg("S3sch");
+      if (rampeHoch || rampeOben ) {
+        if(S2sch) {
+          vor_t(200);
+          msg("S2SCH");
+        } else if (S3sch){
+          Off(OUT_AC);
+          for (int i = 0; i < 180 && S3sch; i++) {
+            OnRev(OUT_A, powerNormal);
+            Wait(1);
+          }
+        }
+      } else if(rampeRunter){
+        for (int i = 0; i < 150 && S3sch; i++) {
+          rechts_t(1);
+        }
+      } else if (!rampeHoch){
+        for (int i = 0; i < 80; i++) {
+          rechts_t(1);
+          if(S4sch && S1wei && i < 40) {
+            rechts_t(290);
+            i = 300;
+          }
+        }
+      }
+    }
+
+    grtest();
+
+    // AUßEN
+
+    if(S1sch && !rampeHoch)
+    {
+      msg("SEN 1");
+      if (rampeRunter) {
+        for (int i = 0; i < 200 && S1sch; i++) {
+          links_t(1);
+        }
+      } else {
+        for (int i = 0; i < 250; i++) {
+          Wait(1);
+          links_nt();
+          if(grun3 && !rampeHoch)
+          {
+            vor_t(400);
+            rechts_t(850);
+            msg("GRUEN R");
+            i = 400;
+          }
+          if(grun2 && !rampeHoch)
+          {
+            vor_t(400);
+            links_t(850);
+            msg("GRUEN L");
+            i = 400;
+          }
+          if (S4sch) {
+            rechts_t(250);
+            vor_t(300);
+            i = 400;
+          }
+        }
+      }
+    }
+
+    if(S4sch && !rampeHoch)
+    {
+      msg("SEN 4");
+      if (rampeRunter) {
+        for (int i = 0; i < 200 && S4sch; i++) {
+          rechts_t(1);
+        }
+      } else {
+        for (int i = 0; i < 250; i++) {
+          Wait(1);
+          rechts_nt();
+          if(grun3 && !rampeHoch)
+          {
+            vor_t(400);
+            rechts_t(850);
+            msg("GRUEN R");
+            i = 400;
+          }
+          if(grun2 && !rampeHoch)
+          {
+            vor_t(400);
+            links_t(850);
+            msg("GRUEN L");
+            i = 400;
+          }
+          if (S1sch) {
+            links_t(250);
+            vor_t(300);
+            i = 400;
+          }
+        }
+      }
+    }
+
+
+  // FLASCHE
+    if(touchm == 1)
+    {
+      RotateMotorEx(OUT_AC, 80, 310, 0, true, true);
+      if (flascheLinks)
+      {
+        RotateMotorEx(OUT_AC, 80, 340, -100, true, true);              // LINKS
+        RotateMotorEx(OUT_AC, 80, -200, 0, true, true);                   // VOR
+        while(S4wei)
+        {
+          OnRevSync(OUT_AC, 100, 27);
+        }
+        RotateMotorEx(OUT_AC, 90, -200, 0, true, true);                   // VOR
+        Off(OUT_AC);
+        for (int i = 0; i < 3000; i++) {
+          if (S4sch) i = 10000;
+          OnFwd(OUT_A, 70);
+          OnRev(OUT_C, 80);
+          Wait(1);
+        }
+      } else {
+        RotateMotorEx(OUT_AC, 80, 340, 100, true, true);              // LINKS
+        RotateMotorEx(OUT_AC, 80, -200, 0, true, true);                   // VOR
+        while(S1wei)
+        {
+          OnRevSync(OUT_AC, 100, -27);
+        }
+        RotateMotorEx(OUT_AC, 90, -200, 0, true, true);                   // VOR
+        Off(OUT_AC);
+        for (int i = 0; i < 3000 && S2wei; i++) {
+          if (S2sch) i = 10000;
+          OnFwd(OUT_C, 70);
+          OnRev(OUT_A, 80);
+          Wait(1);
+        }
+      }
+    }
+
+  // RAMPE
+  /*if (neigungX > 20 && !rampeRunter) {
+      rampeRunter = true;
+      rampeOben = false;
+      kaefigRunter();
+    }
+    if (neigungX > 10 && !rampeRunter ) {
+      Wait(10);
+      if (neigungX > 10) {
+        Off(OUT_AC);
+        for (int i = 0; i < 200 && neigungX > 8; i++) {
+          if(neigungX > 10 && i > 150) {
+            powerVor = 35;
+            rampeOben = false;
+            rampeRunter = true;
+            kaefigRunter();
+            i = 300;
+          }
+        }
+        if (neigungY > 6) {
+          for (int i = 0; i < 400 && neigungY > -2 && neigungY < 2; i++) {
+            OnRev(OUT_C, 50);
+            OnFwd(OUT_A, 50);
+          }
+        }
+        if (neigungY < -6) {
+          for (int i = 0; i < 400 && neigungY > -2 && neigungY < 2; i++) {
+            OnRev(OUT_A, 50);
+            OnFwd(OUT_C, 50);
+          }
+        }
+      }
+    }*/
+    if(neigungX > 9 && rampeOben) {
+      powerVor = 35;
+      rampeOben = false;
+      rampeRunter = true;
+      kaefigRunter();
+    } else
+    if(neigungX > -2 && neigungX < 2) {
+      if (rampeHoch) {
+        Off(OUT_AC);
+        msg("OBEN");
+        rampeHoch = false;
+        rampeOben = true;
+        powerVor = powerNormal;
+        rueck_t(1100);
+        Off(OUT_AC);
+        kaefigHoch();
+      } else  if(rampeRunter) {
+        msg("UNTEN");
+        powerVor = powerNormal;
+        rampeRunter = false;
+        kaefigHoch();
+        RotateMotor(OUT_AC, 70, 600);
+      }
+    }
+
+    if (rampeRunter && neigungY < -10) {
+      rechts_t(400);
+    }
+
+    if (rampeRunter && neigungY > 10) {
+      links_t(400);
+    }
+
+    if(rampeHoch && powerVor != powerSchnell) {
+      powerVor = powerSchnell;
+    }
+
+    if(!rampeHoch && neigungX < (neigungRampeH - 1)) {
+      for (int i = 0; i < 300 && neigungX < (neigungRampeH + 2); i++) {
+        Off(OUT_AC);
+        Wait(1);
+        if(i > 200){
+          rampeHoch = true;
+          kaefigRunter();
+          i = 600;
+        }
+      }
+    }
+
+    endZoneErkennen();
+
+    if(endZone) {
+      ausrichtenWand();
+      Off(OUT_AC);
+      RotateMotor(OUT_AC, powerVor, 200);
+      RotateMotor(OUT_A, powerDrehen, 450);
+      RotateMotor(OUT_C, powerDrehen, 450);
+      //RotateMotor(OUT_A, PowerDrehen, 200);
+      //RotateMotor(OUT_C, PowerDrehen, 200);
+      RotateMotor(OUT_AC, powerVor, -100);
+      RotateMotorEx(OUT_AC, powerVor, -800, -30, true, false);
+      ausrichtenWand();
+      kaefigRunter();
+      endZoneAbfahren();
+      Off(OUT_AC);
+      RotateMotor(OUT_C, powerDrehen, -450);
+      RotateMotor(OUT_A, powerDrehen, -450);
+
+      RotateMotor(OUT_AC, 80, -180);
+      RotateMotor(OUT_A, 80, 930);
+      OnRev(OUT_AC, 90);
+      Wait(900);
+      RotateMotorEx(OUT_AC, 80, 400, -100, true, false);
+      ausrichtenWand();
+      endLoop++;
+
+      endFahren = true;
+        while(endFahren) {
+          endZoneAbfahren();
+          endDrehen();
+        }
+        if(endEckeFinden){
+          while(endEckeFinden) {
+          if(endLoop % 2 == 0) {
+            RotateMotor(OUT_AC, 80, 370);
+            RotateMotor(OUT_C, 80, 900);
+          } else {
+            RotateMotor(OUT_AC, 80, 370);
+            RotateMotor(OUT_A, 80, 900);
+          }
+          while(S1wei && S4wei) {
+            while (S1wei && S4wei && touchr == 0) {
+              vor_nt();
+            }
+            if (S1sch || S4sch) {
+              endEckeFinden = false;
+              endEckeGefunden = true;
+            } else if(touchr == 1) {
+              ausrichtenWand();
+              RotateMotor(OUT_AC, 80, 370);
+              RotateMotor(OUT_A, 80, 400);
+              RotateMotor(OUT_C, 80, 400);
+              RotateMotor(OUT_AC, 80, -150);
+              RotateMotor(OUT_A, 80, -960);
+            }
+          }
+          endEckeFinden = false;
+          endEckeGefunden = true;
+        }
+      } else {
+        endZoneAbfahren();
+      }
+
+        if (endEckeGefunden) {
+
+          while(S1wei && S4wei && touchl == 0) {
+            vor_nt();
+          }
+          if (touchl == 1) {
+            RotateMotor(OUT_AC, 80, 360);
+            RotateMotorEx(OUT_AC, 80, 400, 100, true, false);
+          }
+          bool ausgerichtet = false;
+          int trysl = 0;
+          int trysr = 0;
+          while (!ausgerichtet) {
+
+            for (int i = 0; i < 2000 && S1sch && S4wei; i++) {
+              Off(OUT_A);
+              OnRev(OUT_C, 80);
+              if(i > 1800) {
+                RotateMotor(OUT_AC, 80, 360);
+                if(trysl % 2 == 0) {
+                  links_t(66);
+                  trysl++;
+                } else {
+                  rechts_t(133);
+                  trysl++;
+                }
+              }
+              Wait(1);
+            }
+            for (int i = 0; i < 2000 && S4sch && S1wei; i++) {
+              Off(OUT_C);
+              OnRev(OUT_A, 80);
+              if(i > 1800) {
+                RotateMotor(OUT_AC, 80, 360);
+                if(trysr % 2 == 0) {
+                  rechts_t(66);
+                  trysl++;
+                } else {
+                  links_t(133);
+                  trysl++;
+                }
+              }
+              Wait(1);
+            }
+            if(S1sch && S4sch) {
+              ausgerichtet = true;
+            }
+          }
+          ausgerichtet = false;
+
+          Off(OUT_AC);
+          while(!ausgerichtet) {
+            for (int i = 0; i < 500 && S1sch; i++) {
+              OnFwd(OUT_A, 80);
+              Wait(1);
+            }
+            if(S1wei) {
+              Off(OUT_A);
+            }
+            for (int i = 0; i < 500 && S4sch; i++) {
+              OnFwd(OUT_C, 80);
+              Wait(1);
+            }
+            if(S4wei) {
+              Off(OUT_C);
+            }
+            if (S1wei && S4wei) {
+              ausgerichtet = true;
+            }
+          }
+          RotateMotor(OUT_AC, 100, 800);
+          RotateMotorEx(OUT_AC, 100, 1000, 100, true, true);
+          RotateMotor(OUT_AC, 100, 1000);
+          RotateMotor(OUT_AC, 100, -100);
+          OnFwd(OUT_B, 100);
+          Wait(3000);
+          if(endLoop % 2 == 1) {
+            rechts_t(133);
+          } else {
+            links_t(133);
+          }
+          Off(OUT_AC);
+          Wait(500);
+          RotateMotor(OUT_AC, 100, -800);
+          Stop(true);
+        }
+    }
+  }
+}

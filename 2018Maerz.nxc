@@ -1,0 +1,551 @@
+#define SENWERT1 140
+#define SENWERT2 250
+#define SENWERT3 250
+#define SENWERT4 140
+
+#define powerSchnell 100
+#define powerNormal 70
+#define powerLangsam 50
+#define powerRueck 50
+#define powerDrehen 60
+
+#define grun2 greenProz2 > 36 && blueProz2 <= 33 && redProz2 <= 33
+#define grun3 greenProz3 > 35 && blueProz3 <= 33 && redProz3 <= 35
+
+#define S1sch Sensor1 > sen1
+#define S1wei Sensor1 < sen1
+
+#define S2sch RGB2 < sen2
+#define S2wei RGB2 > sen2
+
+#define S3sch RGB3 < sen3
+#define S3wei RGB3 > sen3
+
+#define S4sch Sensor4 > sen4
+#define S4wei Sensor4 < sen4
+
+#define neigungRampeH -10
+#define neigungRampeR 10
+
+int neigungX;
+int neigungY;
+int neigungZ;
+
+int touchl;
+int touchr;
+int touchm;
+int touchh;
+
+bool rampeHoch = false;
+bool rampeOben = false;
+bool rampeRunter false;
+bool flascheLinks = true;
+
+bool endTest = false;
+bool endZone = false;
+bool endFahren = false;
+bool endEckeFinden = false;
+bool endEckeGefunden = false;
+bool endFertig = false;
+int weissTime = 0;
+int endLoop = 0;
+
+// EXTRA VARIABLEN
+int powerVor = 70;
+int extra = 2;
+
+bool kalibrieren = true;
+int s1off;
+int s2off;
+int s3off;
+int s4off;
+
+// SENSOR 1
+int Sensor1;
+int sch1;
+int wei1 = 55;
+int sen1;
+
+// SENSOR 2
+int sen2 = SENWERT2;
+
+unsigned int rawRed2;
+unsigned int rawBlue2;
+unsigned int rawGreen2;
+int RGB2;
+int redProz2;
+int blueProz2;
+int greenProz2;
+
+
+// SENSOR 3
+
+int sen3 = SENWERT3;
+
+unsigned int rawRed3;
+unsigned int rawBlue3;
+unsigned int rawGreen3;
+int RGB3;
+int redProz3;
+int blueProz3;
+int greenProz3;
+
+
+// SENSOR 4
+
+int sch4;
+int Sensor4;
+int wei4 = 56;
+int sen4;
+
+
+// I2C-Kommunikation
+
+byte adresse = 0x18;                                // Arduino Adresse
+byte anzahl_bytes = 9;                             // Anzahl der von Arduinoboard erwarteten Daten/Zahlen
+byte gesendet[];                                    // Array für gesendete Daten
+byte empfangen[9];                                   // Array für empfangene Daten
+
+
+// ===== VOIDS ======
+  // VOR
+
+void vor_nt()                                 // Vor NoTime
+{
+  OnRevSync(OUT_AC, powerVor, 0);
+bv}
+void vor_t(int Zeit_vor)                      // Vor für Zeit
+{
+  OnRevSync(OUT_AC, powerVor, 0);
+  Wait(Zeit_vor);
+}
+
+  // RUECK
+
+void rueck_nt()                               // Rueck NoTime
+{
+  OnFwdSync(OUT_AC, powerRueck, 0);
+}
+
+void rueck_t(int Zeit_rueck)                  // Rueck für Zeit
+{
+  OnFwdSync(OUT_AC, powerRueck, 0);
+  Wait(Zeit_rueck);
+}
+
+  // RECHTS
+
+void rechts_nt()                              // Rechts NoTime
+{
+  OnFwd(OUT_C, powerDrehen);
+  OnRev(OUT_A, powerDrehen);
+}
+
+void rechts_t(int Zeit_rechts)                // Rechts für Zeit
+{
+  OnFwd(OUT_C, powerDrehen);
+  OnRev(OUT_A, powerDrehen);
+  Wait(Zeit_rechts);
+}
+
+  // LINKS
+
+void links_nt()
+{
+  OnFwd(OUT_A, powerDrehen);
+  OnRev(OUT_C, powerDrehen);
+}
+
+void links_t(int Zeit_links)
+{
+  OnFwd(OUT_A, powerDrehen);
+  OnRev(OUT_C, powerDrehen);
+  Wait(Zeit_links);
+}
+
+  // KUGEL KÄFIG
+
+void kaefigHoch()
+{
+  OnFwd(OUT_B,110);
+  Wait(1000);
+  Off(OUT_B);
+}
+
+void kaefigRunter()
+{
+  OnRev(OUT_B,100);
+  Wait(1000);
+  Off(OUT_B);
+}
+
+  // DISPLAY
+
+void display(bool startup_anzeige, bool werte_anzeigen) {
+  if(startup_anzeige == true)
+  {
+    ClearScreen();                                  // Display beim Starten
+    TextOut(0,LCD_LINE3,"     Starten     ");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      .");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      ..");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      ...");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      ....");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"      .....");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"       ....");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"        ...");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"         ..");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"          .");
+    Wait(20);
+    TextOut(0,LCD_LINE4,"           ");
+    Wait(300);
+    ClearScreen();
+    kaefigHoch();
+  }
+  if(werte_anzeigen == true){
+    TextOut(1, LCD_LINE1, "S1:" + NumToStr(Sensor1)+"   ");
+    if(S1sch) {
+      TextOut(40, LCD_LINE1, "S");
+    } else {
+      TextOut(40, LCD_LINE1, "W");
+    }
+
+    TextOut(50, LCD_LINE1, "S4:" + NumToStr(Sensor4)+"   ");
+    if(S1sch) {
+      TextOut(90, LCD_LINE1, "S");
+    } else {
+      TextOut(90, LCD_LINE1, "W");
+    }
+
+    TextOut(1, LCD_LINE2, "S2: " + NumToStr(RGB2)+"   ");
+    TextOut(1, LCD_LINE3, "S3: " + NumToStr(RGB3)+"   ");
+    TextOut(1,LCD_LINE4, "L:"  + NumToStr(touchl));
+    TextOut(25,LCD_LINE4, "M:"  + NumToStr(touchm));
+    TextOut(50,LCD_LINE4, "R:"  + NumToStr(touchr));
+    TextOut(75,LCD_LINE4, "H:"  + NumToStr(touchh));
+
+    TextOut(1, LCD_LINE5, "X: " + NumToStr(neigungX)+"   ");
+    TextOut(50, LCD_LINE5, "Tem: " + NumToStr(powerVor) + "%");
+    TextOut(1, LCD_LINE6, "WTimer:" + NumToStr(weissTime));
+
+  }
+}
+
+task msgReset()
+{
+  Wait(3000);
+  ClearLine(LCD_LINE8);
+  TextOut(1,LCD_LINE8,"MSG:");
+}
+
+void msg(string text) {
+  TextOut(1,LCD_LINE8,"MSG: " + text);
+  start msgReset;
+}
+
+void sensorenInit() {
+  // SENSOR 1
+  sch1 = SENWERT1 + extra;
+  sen1 = sch1;
+  // SENSOR 4
+  sch4 = SENWERT4 + extra;
+  sen4 = sch4;
+  msg("SEN INIT");
+  // SENSOREN DEFINIEREN
+  SetSensorLowspeed(IN_1);                                             // Die I2C-Kommunikation wird für Port 1 initialisiert.
+  SetSensorColorFull(S2);
+  SetSensorColorFull(S3);
+}
+
+
+
+
+
+// ===== TASKS =====
+
+
+int Lese_Arduino()
+{
+  ArrayBuild(gesendet, adresse, 0x00);                               // Sende den Wert 0 zum Arduinoboard
+  I2CBytes(S1, gesendet, anzahl_bytes, empfangen);                        // I2C-Kommunikation
+  neigungX = empfangen[0] - 128;
+  neigungY = empfangen[1] - 128;
+  neigungZ = empfangen[2] - 128;
+  Sensor1 = empfangen[3] - s1off + 100;
+  Sensor4 = empfangen[4] - s4off + 100;
+  touchl = empfangen[5];                           // TOUCH LINKS
+  touchr = empfangen[6];                           // TOUCH RECHTS
+  touchm = empfangen[7];                           // TOUCH MITTE
+  touchh = empfangen[8];                           // TOUCH HINTEN
+  return 0;
+}
+
+task werte()
+{
+  int daten = 0;
+  TextOut(20,LCD_LINE4,"Kalibrieren");
+  TextOut(30,LCD_LINE5," 3sec");
+  Wait(1000);
+  TextOut(30,LCD_LINE5," 2sec  ");
+  Wait(1000);
+  TextOut(30,LCD_LINE5," 1sec  ");
+  Wait(1000);
+  ArrayBuild(gesendet, adresse, 0x00);                               // Sende den Wert 0 zum Arduinoboard
+  I2CBytes(S1, gesendet, anzahl_bytes, empfangen);                        // I2C-Kommunikation
+  s1off = empfangen[3];
+  s4off = empfangen[4];
+
+  rawRed2 = ColorSensorRaw(S2, INPUT_RED);
+  rawBlue2 = ColorSensorRaw(S2, INPUT_BLUE);
+  rawGreen2 = ColorSensorRaw(S2, INPUT_GREEN);
+  rawRed3 = ColorSensorRaw(S3, INPUT_RED);
+  rawBlue3 = ColorSensorRaw(S3, INPUT_BLUE);
+  rawGreen3 = ColorSensorRaw(S3, INPUT_GREEN);
+
+  RGB2 = rawRed2 + rawBlue2 + rawGreen2;
+  RGB3 = rawRed3 + rawBlue3 + rawGreen3;
+  s2off = RGB2;
+  s3off = RGB3;
+
+  kalibrieren = false;
+  rawRed2 = ColorSensorRaw(S2, INPUT_RED);
+  rawBlue2 = ColorSensorRaw(S2, INPUT_BLUE);
+  rawGreen2 = ColorSensorRaw(S2, INPUT_GREEN);
+  redProz2 = (rawRed2 * 100) / RGB2;
+  blueProz2 = (rawBlue2 * 100) / RGB2;
+  greenProz2 = (rawGreen2 * 100) / RGB2;
+
+  rawRed3 = ColorSensorRaw(S3, INPUT_RED);
+  rawBlue3 = ColorSensorRaw(S3, INPUT_BLUE);
+  rawGreen3 = ColorSensorRaw(S3, INPUT_GREEN);
+  redProz3 = (rawRed3 * 100) / RGB3;
+  blueProz3 = (rawBlue3 * 100) / RGB3;
+  greenProz3 = (rawGreen3 * 100) / RGB3;
+
+  RGB2 = (rawRed2 + rawBlue2 + rawGreen2) - s2off + 300;
+  RGB3 = (rawRed3 + rawBlue3 + rawGreen3) - s3off + 300;
+  // Arduino Daten lesen
+  daten = Lese_Arduino();
+
+  while (true) {
+    // RGB RAW WERTE   werden aktualisiert
+
+    rawRed2 = ColorSensorRaw(S2, INPUT_RED);
+    rawBlue2 = ColorSensorRaw(S2, INPUT_BLUE);
+    rawGreen2 = ColorSensorRaw(S2, INPUT_GREEN);
+    redProz2 = (rawRed2 * 100) / RGB2;
+    blueProz2 = (rawBlue2 * 100) / RGB2;
+    greenProz2 = (rawGreen2 * 100) / RGB2;
+
+    rawRed3 = ColorSensorRaw(S3, INPUT_RED);
+    rawBlue3 = ColorSensorRaw(S3, INPUT_BLUE);
+    rawGreen3 = ColorSensorRaw(S3, INPUT_GREEN);
+    redProz3 = (rawRed3 * 100) / RGB3;
+    blueProz3 = (rawBlue3 * 100) / RGB3;
+    greenProz3 = (rawGreen3 * 100) / RGB3;
+
+    RGB2 = (rawRed2 + rawBlue2 + rawGreen2) - s2off + 300;
+    RGB3 = (rawRed3 + rawBlue3 + rawGreen3) - s3off + 300;
+    // Arduino Daten lesen
+    daten = Lese_Arduino();
+    display(false, true);         // DISPLAY UPDATE. Nur werte
+  }
+}
+
+
+
+// MAIN TASK
+
+task main()
+{
+  sensorenInit();
+  start werte;
+
+  while(kalibrieren) {
+  }
+
+  ClearScreen();
+  kaefigHoch();
+
+  while(true)
+  {
+    vor_nt();
+
+  // LINIE FAHREN
+
+    // INNEN
+
+    if(RGB3 > 350) {
+      for (int i = 0; i < 300; i++) {
+        vor_t(1);
+        if(RGB2 > 350) {
+          vor_t(550);
+          msg("BUMPER");
+          i = 500;
+        }
+      }
+    }
+
+    if(RGB2 > 350) {
+      for (int i = 0; i < 300; i++) {
+        vor_t(1);
+        if(RGB3 > 350) {
+          vor_t(550);
+          msg("BUMPER / RAMPE");
+          i = 500;
+        }
+      }
+    }
+
+    if(S2sch)
+    {
+      if (rampeHoch == true) {
+        if(S3sch) {
+          vor_t(200);
+        } else {
+          Off(OUT_AC);
+          for (int i = 0; i < 180 && S2sch; i++) {
+            OnRev(OUT_C, powerNormal);
+            Wait(1);
+          }
+        }
+      } else {
+        links_t(180);
+      }
+    }
+
+    if(S3sch)
+    {
+      if (rampeHoch == true) {
+        if(S2sch) {
+          vor_t(200);
+        } else {
+          Off(OUT_AC);
+          for (int i = 0; i < 180 && S3sch; i++) {
+            OnRev(OUT_A, powerNormal);
+            Wait(1);
+          }
+        }
+      } else {
+        rechts_t(180);
+      }
+    }
+
+    // GRÜN
+    if(grun2 && !rampeHoch)
+    {
+      vor_t(400);
+      links_t(1000);
+      msg("GRUEN L");
+    }
+
+    if(grun3 && !rampeHoch)
+    {
+      vor_t(400);
+      rechts_t(1000);
+      msg("GRUEN R");
+    }
+
+
+    // AUßEN
+
+    if(S1sch && !rampeHoch)
+    {
+      msg("SEN 1");
+      for (int i = 0; i < 350; i++) {
+        Wait(1);
+        links_nt();
+        if(grun3)
+        {
+          vor_t(400);
+          rechts_t(1200);
+          msg("GRUEN R");
+          i = 400;
+        }
+        if (S4sch) {
+          rechts_t(400);
+          vor_t(300);
+          i = 400;
+        }
+      }
+    }
+
+    if(S4sch && !rampeHoch)
+    {
+      msg("SEN 4");
+      for (int i = 0; i < 350; i++) {
+        Wait(1);
+        rechts_nt();
+        if(grun2)
+        {
+          vor_t(400);
+          links_t(1200);
+          msg("GRUEN L");
+          i = 400;
+        }
+        if (S1sch) {
+          links_t(400);
+          vor_t(300);
+          i = 400;
+        }
+      }
+    }
+
+
+  // FLASCHE
+    if(touchm == 1)
+    {
+      RotateMotorEx(OUT_AC, 80, 340, 0, true, true);
+      if (flascheLinks)
+      {
+        RotateMotorEx(OUT_AC, 80, 340, -100, true, true);              // LINKS
+        RotateMotorEx(OUT_AC, 80, -200, 0, true, true);                   // VOR
+        while(S4wei)
+        {
+          OnRevSync(OUT_AC, 100, 24);
+        }
+        RotateMotorEx(OUT_AC, powerVor, -150, 0, true, true);                   // VOR
+        Off(OUT_AC);
+        for (int i = 0; i < 2000 && S3wei; i++) {
+          OnFwd(OUT_A, 60);
+          OnRev(OUT_C, 80);
+          Wait(1);
+        }
+      } else {
+
+      }
+    }
+
+  /*// RAMPE
+
+    if(rampeHoch && neigungX > -2 && neigungX < 2) {
+      rampeHoch = false;
+      powerVor = powerNormal;
+    }
+
+    if(rampeHoch && powerVor != powerSchnell) {
+      powerVor = powerSchnell;
+    }
+
+    if (!rampeHoch && neigungX < neigungRampeH) {
+      for (int i = 0; i < 500 && neigungX < (neigungRampeH + 2); i++) {
+        Off(OUT_AC);
+        Wait(1);
+        if(i > 400){
+          rampeHoch = true;
+          kaefigRunter();
+          i = 600;
+        }
+      }
+    }
+    */
+  }
+}
